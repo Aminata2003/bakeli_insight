@@ -24,6 +24,7 @@ class AvisOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     feedback_id: str
+    apprenant: str | None = None
     plateforme: str | None = None
     date_avis: datetime | None = None
     annee: int | None = None
@@ -34,6 +35,10 @@ class AvisOut(BaseModel):
     coach: str | None = None
     satisfaction_qualitative: str | None = None
     satisfaction_score_10: int | None = None
+    note: int | None = None
+    sentiment: str | None = None
+    resume: str | None = None
+    langue_detectee: str | None = None
     frequence_feedback: str | None = None
     source_feedback: str | None = None
     attentes_formation: str | None = None
@@ -43,6 +48,7 @@ class AvisOut(BaseModel):
     avis_activites_vendredi: str | None = None
     regroupement_niveaux: str | None = None
     commentaire_libre: str | None = None
+    commentaire: str | None = None
     langue: str | None = None
     texte_a_analyser_ia: str | None = None
     statut_moderation: str

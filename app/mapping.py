@@ -26,7 +26,10 @@ ALIASES: dict[str, list[str]] = {
     "avis_activites_vendredi": ["vendredi"],
     "regroupement_niveaux": ["regroupement"],
     "commentaire_libre": ["commentaire", "remarque"],
+    "texte_a_analyser_ia": ["texte a analyser ia", "texte ia", "analyse ia"],
     "langue": ["langue"],
+    "prenom": ["prenom", "prénom", "first name"],
+    "nom": ["nom de famille", "ton nom", "nom"],
 }
 
 
@@ -116,6 +119,7 @@ def transformer_ligne(ligne: dict, mapping: dict[str, str | None], index: int, n
         "avis_activites_vendredi": str(valeur_pour("avis_activites_vendredi")) if valeur_pour("avis_activites_vendredi") else None,
         "regroupement_niveaux": str(valeur_pour("regroupement_niveaux")) if valeur_pour("regroupement_niveaux") else None,
         "commentaire_libre": str(valeur_pour("commentaire_libre")) if valeur_pour("commentaire_libre") else None,
+        "texte_a_analyser_ia": str(valeur_pour("texte_a_analyser_ia")) if valeur_pour("texte_a_analyser_ia") else None,
         "langue": str(valeur_pour("langue")) if valeur_pour("langue") else "Français",
         "source_fichier": nom_fichier,
     }
@@ -141,3 +145,11 @@ def deduire_thematique(*textes: str | None) -> str:
         if re.search(motif, texte_complet, re.IGNORECASE):
             return cle
     return "pedagogie"
+def extraire_valeur(ligne: dict, mapping: dict[str, str | None], champ_cible: str):
+    for colonne, champ in mapping.items():
+        if champ == champ_cible:
+            v = ligne.get(colonne)
+            if v is None or (isinstance(v, float) and pd.isna(v)) or v == "":
+                return None
+            return v
+    return None

@@ -84,13 +84,19 @@ class Avis(Base):
     commentaire_libre: Mapped[str | None] = mapped_column(Text, nullable=True)
     langue: Mapped[str | None] = mapped_column(String, nullable=True)
     texte_a_analyser_ia: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sentiment: Mapped[str | None] = mapped_column(String, nullable=True)
+    note: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    resume: Mapped[str | None] = mapped_column(Text, nullable=True)
+    langue_detectee: Mapped[str | None] = mapped_column(String, nullable=True)
+    date_traitement_ia: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
 
     thematique_id: Mapped[int | None] = mapped_column(ForeignKey("thematiques.id"), nullable=True)
 
-    statut_moderation: Mapped[str] = mapped_column(String, default="nouveau")
+    statut_moderation: Mapped[str] = mapped_column(String, default="nouveau", nullable=False)
     source_fichier: Mapped[str | None] = mapped_column(String, nullable=True)
 
     date_ingestion: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
 
     plateforme: Mapped["Plateforme"] = relationship()
     thematique: Mapped["Thematique | None"] = relationship()
+    apprenant: Mapped["Apprenant | None"] = relationship()

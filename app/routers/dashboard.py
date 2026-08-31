@@ -15,17 +15,25 @@ def get_vue_ensemble(
     db: Session = Depends(get_db),
     _current=Depends(require_role("admin", "analyst", "moderator")),
 ):
-    """Reproduit deriveKpis() de derive.ts (frontend), pour que les chiffres soient identiques
-    que la donnée vienne de dataset.ts (démo) ou de notre vraie base."""
+    """Reproduit deriveKpis() de derive.ts (frontend). Un seul score par avis est utilisé
+    à la fois pour la catégorie (positif/neutre/négatif) et pour la moyenne, afin que les
+    deux chiffres restent toujours cohérents entre eux."""
     tous_les_avis = db.scalars(select(Avis)).all()
-    total = len(tous_les_avis) or 1  # évite une division par zéro si la base est vide
+    total = len(tous_les_avis) or 1
 
-    scores = [a.satisfaction_score_10 for a in tous_les_avis if a.satisfaction_score_10 is not None]
+    def score_effectif(avis: Avis) -> int | None:
+        """Score /10 utilisé pour CE avis, quelle que soit sa source :
+        priorité au score qualitatif explicite (formulaire), sinon on dérive
+        un score /10 à partir de la note NLP /5 (note * 2)."""
+        if avis.satisfaction_score_10 is not None:
+            return avis.satisfaction_score_10
+        if avis.note is not None:
+            return avis.note * 2
+        return None
 
-    def categorie(avis: Avis) -> str:
+    def categorie(avis: Avis, score: int | None) -> str:
         if avis.sentiment:
             return avis.sentiment
-        score = avis.satisfaction_score_10
         if score is None:
             return "neutre"
         if score >= 8:
@@ -34,15 +42,23 @@ def get_vue_ensemble(
             return "negatif"
         return "neutre"
 
-    categories = [categorie(a) for a in tous_les_avis]
+    scores_et_categories = [(score_effectif(a), None) for a in tous_les_avis]
+    scores_et_categories = [
+        (score, categorie(a, score))
+        for a, (score, _) in zip(tous_les_avis, scores_et_categories)
+    ]
+
+    scores_valides = [s for s, _ in scores_et_categories if s is not None]
+    categories = [c for _, c in scores_et_categories]
+
     nb_positif = categories.count("positif")
     nb_neutre = categories.count("neutre")
     nb_negatif = categories.count("negatif")
 
-    satisfaction_moyenne = round((sum(scores) / len(scores)) * 10) if scores else 0
+    satisfaction_moyenne = round((sum(scores_valides) / len(scores_valides)) * 10) if scores_valides else 0
 
     return {
-        "satisfaction": satisfaction_moyenne,               # /100, comme deriveKpis
+        "satisfaction": satisfaction_moyenne,
         "positive": round((nb_positif / total) * 100),
         "neutral": round((nb_neutre / total) * 100),
         "negative": round((nb_negatif / total) * 100),

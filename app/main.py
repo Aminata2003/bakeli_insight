@@ -3,9 +3,13 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.database import SessionLocal
+from app.database import SessionLocal
+from app.purge import purger_identites_expirees
 from app.routers import reference, avis, imports, dashboard
 from app.security import require_role
-
+from app.database import SessionLocal
+from app.purge import purger_identites_expirees
 
 app = FastAPI(
     title="Bakeli Insights API",
@@ -13,7 +17,15 @@ app = FastAPI(
     version="0.1.0",
 )
 
-
+@app.on_event("startup")
+def purge_au_demarrage():
+    db = SessionLocal()
+    try:
+        nb = purger_identites_expirees(db)
+        if nb:
+            print(f"[Purge RGPD] {nb} identité(s) expirée(s) supprimée(s) au démarrage.")
+    finally:
+        db.close()
 @app.exception_handler(HTTPException)
 async def http_exception_handler(_: Request, exc: HTTPException):
     return JSONResponse(
@@ -76,3 +88,16 @@ def health_check():
 @app.get("/secure-status")
 def secure_status(current=Depends(require_role("admin"))):
     return {"status": "ok", "role": current["role"]}
+
+from app.database import get_db
+from fastapi import Depends
+from sqlalchemy.orm import Session
+
+
+@app.post("/admin/purge")
+def declencher_purge(
+    db: Session = Depends(get_db),
+    _current=Depends(require_role("admin")),
+):
+    nb = purger_identites_expirees(db)
+    return {"identites_supprimees": nb}

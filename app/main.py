@@ -3,13 +3,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.database import SessionLocal
-from app.database import SessionLocal
+from app.database import SessionLocal, get_db
 from app.purge import purger_identites_expirees
 from app.routers import reference, avis, imports, dashboard, auth
 from app.security import require_role
-from app.database import SessionLocal
-from app.purge import purger_identites_expirees
 
 app = FastAPI(
     title="Bakeli Insights API",

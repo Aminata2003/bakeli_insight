@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from collections import Counter
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app.models import Avis
 from app.security import require_role
+from app.wordcloud import calculer_wordcloud
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -115,6 +116,21 @@ def repartition_sentiments(
             for label, value in compteurs.most_common()
         ],
     }
+
+
+@router.get("/wordcloud")
+def get_wordcloud(
+    limite: int = 30,
+    db: Session = Depends(get_db),
+    _current=Depends(require_role("admin", "analyst", "moderator")),
+):
+    """Nuage de mots dynamique -- Vue Community Manager (section 4.C du cahier
+    des charges). Reconnaît les expressions wolof/franglais de la section 3
+    en plus des mots français génériques."""
+    if limite < 1 or limite > 100:
+        raise HTTPException(400, "limite invalide -- attendu entre 1 et 100")
+    avis = db.scalars(select(Avis)).all()
+    return {"items": calculer_wordcloud(avis, limite)}
 
 
 @router.get("/evolution")

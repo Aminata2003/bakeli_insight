@@ -27,6 +27,22 @@ class Thematique(Base):
     cle: Mapped[str] = mapped_column(String, unique=True, nullable=False)  # 'plateforme', 'technique', 'coach'...
     nom_affiche: Mapped[str] = mapped_column(String, nullable=False)
     mots_cles_regex: Mapped[str | None] = mapped_column(Text, nullable=True)  # motif regex, comme dans TOPIC_RULES
+class Utilisateur(Base):
+    """Comptes administrateurs Bakeli (super_admin, admin, collaborator).
+    Plateforme privée réservée aux admins Bakeli (insights.bakeli.tech) --
+    pas d'auto-inscription, les comptes sont créés manuellement par un super_admin."""
+    __tablename__ = "utilisateurs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    mot_de_passe_hash: Mapped[str] = mapped_column(String, nullable=False)
+    nom_complet: Mapped[str] = mapped_column(String, nullable=False)
+    # Mêmes valeurs que le type Role du frontend (store.tsx) : super_admin | admin | collaborator
+    role: Mapped[str] = mapped_column(String, nullable=False)
+    actif: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
+
+
 class Apprenant(Base):
     __tablename__ = "apprenants"
 

@@ -27,6 +27,7 @@ class AvisOut(BaseModel):
     apprenant: str | None = None
     plateforme: str | None = None
     date_avis: datetime | None = None
+    date_ingestion: datetime | None = None
     annee: int | None = None
     mois: int | None = None
     campus: str | None = None

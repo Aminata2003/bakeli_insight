@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from app.database import SessionLocal
 from app.database import SessionLocal
 from app.purge import purger_identites_expirees
-from app.routers import reference, avis, imports, dashboard
+from app.routers import reference, avis, imports, dashboard, auth
 from app.security import require_role
 from app.database import SessionLocal
 from app.purge import purger_identites_expirees
@@ -78,7 +78,7 @@ app.include_router(reference.router)
 app.include_router(avis.router)
 app.include_router(imports.router)
 app.include_router(dashboard.router)
-
+app.include_router(auth.router)
 
 @app.get("/health")
 def health_check():

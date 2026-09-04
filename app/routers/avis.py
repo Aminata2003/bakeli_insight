@@ -23,6 +23,7 @@ def _to_avis_out(avis: Avis) -> AvisOut:
         plateforme=avis.plateforme.nom_affiche,
         thematique=avis.thematique.nom_affiche if avis.thematique else None,
         date_avis=avis.date_avis,
+        date_ingestion=avis.date_ingestion,
         annee=avis.annee,
         mois=avis.mois,
         campus=avis.campus,

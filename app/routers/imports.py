@@ -17,7 +17,6 @@ from app.mapping import (
 )
 from app.anonymisation import resoudre_apprenant
 from app.services.nlp import analyser_texte
-from app.services.huggingface import analyze_sentiment
 
 
 router = APIRouter(prefix="/imports", tags=["imports"])
@@ -170,9 +169,10 @@ async def importer_fichier(
                 )
 
                 # -----------------------------
-                # Analyse NLP locale
+                # Analyse NLP (Hugging Face, avec repli et priorité
+                # wolof sur le lexique local -- géré dans nlp.py)
                 # -----------------------------
-                analyse = analyser_texte(
+                analyse = await analyser_texte(
                     texte_analyse,
                     donnees.get("satisfaction_score_10"),
                 )
@@ -184,19 +184,6 @@ async def importer_fichier(
                     donnees["langue_detectee"] = (
                         analyse.langue_detectee
                     )
-                    donnees["date_traitement_ia"] = (
-                        datetime.now(timezone.utc)
-                    )
-
-                # -----------------------------
-                # Analyse sentiment Hugging Face
-                # -----------------------------
-                sentiment_ia = await analyze_sentiment(
-                    texte_analyse
-                )
-
-                if sentiment_ia:
-                    donnees["sentiment"] = sentiment_ia
                     donnees["date_traitement_ia"] = (
                         datetime.now(timezone.utc)
                     )

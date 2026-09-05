@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -7,13 +8,13 @@ from app.models import Avis
 from app.services.nlp import analyser_texte, texte_a_analyser
 
 
-def main() -> None:
+async def main() -> None:
     db = SessionLocal()
     try:
         avis = db.scalars(select(Avis)).all()
         analyses = 0
         for element in avis:
-            resultat = analyser_texte(
+            resultat = await analyser_texte(
                 texte_a_analyser(element), element.satisfaction_score_10
             )
             if resultat is None:
@@ -34,4 +35,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

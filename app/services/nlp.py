@@ -2,6 +2,7 @@ import re
 from dataclasses import dataclass
 
 from app.mapping import normaliser
+from app.services.huggingface import analyze_sentiment
 
 
 POSITIFS = {
@@ -27,13 +28,7 @@ PHRASES_NEGATIVES = (
 )
 MOTS_WOLOF = {"nekhna", "machallah", "liguey", "metina", "deugueur", "amoul", "dafa"}
 
-# Marqueurs de négation français courants (y compris à l'oral, sans le "ne").
-# "plus" est volontairement exclu : trop ambigu ("plus de coach" est déjà une
-# phrase-signal à part, et "plus" seul sert aussi de comparatif/quantité).
 NEGATIONS = {"pas", "jamais", "aucun", "aucune", "sans", "ni", "non"}
-
-# Nombre de mots précédents à vérifier pour détecter une négation portant sur
-# le mot courant -- couvre "pas très satisfait", "aucun vrai probleme", etc.
 FENETRE_NEGATION = 3
 
 
@@ -68,19 +63,16 @@ def _decouper_en_clauses(texte_normalise: str) -> list[str]:
 
 def _est_negue(tokens: list[str], index: int) -> bool:
     """Vrai si un marqueur de négation apparaît dans les FENETRE_NEGATION mots
-    précédant tokens[index], DANS LA MÊME CLAUSE -- ex: pour "tres" dans
-    "pas tres satisfait", on regarde ["pas"] avant "satisfait"."""
+    précédant tokens[index], DANS LA MÊME CLAUSE."""
     debut = max(0, index - FENETRE_NEGATION)
     return any(mot in NEGATIONS for mot in tokens[debut:index])
 
 
-def analyser_texte(texte: str | None, score_explicite: int | None = None) -> ResultatAnalyse | None:
-    if not texte or not texte.strip():
-        return None
-
-    texte_nettoye = " ".join(texte.split())
-    texte_normalise = normaliser(texte_nettoye)
-
+def _score_lexical(texte_normalise: str) -> tuple[int, set[str]]:
+    """Score positif/négatif basé sur le lexique local (avec gestion de la
+    négation). Sert de repli si Hugging Face est indisponible, et prime sur
+    Hugging Face quand du wolof est détecté (non couvert par un modèle
+    généraliste)."""
     positifs = 0
     negatifs = 0
     mots_rencontres: set[str] = set()
@@ -92,28 +84,56 @@ def analyser_texte(texte: str | None, score_explicite: int | None = None) -> Res
             negue = _est_negue(tokens, i)
 
             if mot in POSITIFS:
-                # "pas satisfait" -> compte comme négatif, pas positif.
                 negatifs += 1 if negue else 0
                 positifs += 0 if negue else 1
             elif mot in NEGATIFS:
-                # "aucun probleme" -> compte comme positif, pas négatif.
                 positifs += 1 if negue else 0
                 negatifs += 0 if negue else 1
 
     negatifs += sum(1 for phrase in PHRASES_NEGATIVES if phrase in texte_normalise)
-    score = positifs - negatifs
+    return positifs - negatifs, mots_rencontres
+
+
+def _sentiment_note_depuis_score(score: int) -> tuple[str, int]:
+    if score > 0:
+        return "positif", min(5, 3 + score)
+    if score < 0:
+        return "negatif", max(1, 3 + score)
+    return "neutre", 3
+
+
+def _note_depuis_sentiment_hf(sentiment: str) -> int:
+    """Hugging Face ne renvoie qu'un label, pas d'intensité exploitable pour
+    une note /5 -- on retombe sur une note neutre par polarité."""
+    return {"positif": 4, "negatif": 2, "neutre": 3}[sentiment]
+
+
+async def analyser_texte(texte: str | None, score_explicite: int | None = None) -> ResultatAnalyse | None:
+    if not texte or not texte.strip():
+        return None
+
+    texte_nettoye = " ".join(texte.split())
+    texte_normalise = normaliser(texte_nettoye)
+    score_lexique, mots_rencontres = _score_lexical(texte_normalise)
+    contient_wolof = bool(mots_rencontres & MOTS_WOLOF)
 
     if score_explicite is not None:
+        # La réponse qualitative de l'étudiant prime sur toute analyse IA.
         sentiment = "positif" if score_explicite >= 8 else "negatif" if score_explicite <= 4 else "neutre"
         note = max(1, min(5, round(score_explicite / 2)))
-    elif score > 0:
-        sentiment, note = "positif", min(5, 3 + score)
-    elif score < 0:
-        sentiment, note = "negatif", max(1, 3 + score)
+    elif contient_wolof and score_lexique != 0:
+        # Wolof détecté et non ambigu -> le lexique dédié (section 3 du
+        # cahier des charges) prime sur Hugging Face, qui ne le comprend pas.
+        sentiment, note = _sentiment_note_depuis_score(score_lexique)
     else:
-        sentiment, note = "neutre", 3
+        sentiment_hf = await analyze_sentiment(texte_nettoye)
+        if sentiment_hf is not None:
+            sentiment = sentiment_hf
+            note = _note_depuis_sentiment_hf(sentiment)
+        else:
+            # Hugging Face indisponible ou échec -> repli sur le lexique local.
+            sentiment, note = _sentiment_note_depuis_score(score_lexique)
 
-    contient_wolof = bool(mots_rencontres & MOTS_WOLOF)
     contient_anglais = bool(re.search(r"\b(the|learning|platform|best|support|project)\b", texte_nettoye, re.I))
     if contient_wolof and contient_anglais:
         langue = "fr-wo-en"

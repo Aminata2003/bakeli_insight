@@ -12,6 +12,17 @@ class PlateformeOut(BaseModel):
     actif: bool
 
 
+class UtilisateurOut(BaseModel):
+    """Ne jamais inclure mot_de_passe_hash ici -- c'est justement le but de
+    ce schéma séparé plutôt que de renvoyer le modèle Utilisateur brut."""
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    email: str
+    nom_complet: str
+    role: str
+    actif: bool
+
+
 class ThematiqueOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

@@ -89,3 +89,15 @@ def require_role(*allowed_roles: str):
         return current
 
     return dependency
+def require_jwt_role(*allowed_roles: str):
+    async def dependency(
+        current: Annotated[dict, Depends(get_current_user)]
+    ) -> dict:
+        if current["role"] not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Rôle requis : {', '.join(allowed_roles)}",
+            )
+        return current
+
+    return dependency

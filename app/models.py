@@ -24,21 +24,25 @@ class Thematique(Base):
     __tablename__ = "thematiques"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    cle: Mapped[str] = mapped_column(String, unique=True, nullable=False)  # 'plateforme', 'technique', 'coach'...
+    cle: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     nom_affiche: Mapped[str] = mapped_column(String, nullable=False)
-    mots_cles_regex: Mapped[str | None] = mapped_column(Text, nullable=True)  # motif regex, comme dans TOPIC_RULES
+    mots_cles_regex: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class Utilisateur(Base):
     """Comptes administrateurs Bakeli (super_admin, admin, collaborator).
-    Plateforme privée réservée aux admins Bakeli (insights.bakeli.tech) --
-    pas d'auto-inscription, les comptes sont créés manuellement par un super_admin."""
+    `equipe` est une couche SÉPARÉE du rôle technique : elle sert à filtrer
+    les données par catégorie de plateforme, conformément à la section 5.3
+    du cahier des charges (gouvernance des accès marketing/pédagogie/direction).
+    NULL = aucune restriction d'équipe (accès complet, cas des admins)."""
     __tablename__ = "utilisateurs"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     mot_de_passe_hash: Mapped[str] = mapped_column(String, nullable=False)
     nom_complet: Mapped[str] = mapped_column(String, nullable=False)
-    # Mêmes valeurs que le type Role du frontend (store.tsx) : super_admin | admin | collaborator
-    role: Mapped[str] = mapped_column(String, nullable=False)
+    role: Mapped[str] = mapped_column(String, nullable=False)  # super_admin | admin | collaborator
+    equipe: Mapped[str | None] = mapped_column(String, nullable=True)  # marketing | pedagogie | direction | NULL
     actif: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
 
@@ -65,16 +69,12 @@ class IdentiteTemporaire(Base):
 
 
 class Avis(Base):
-    """
-    Miroir exact du type `RealFeedback` défini dans dataset.ts côté frontend.
-    Les noms de champs sont volontairement identiques pour que l'API puisse
-    être consommée sans transformation supplémentaire dans use-feedback.ts.
-    """
+    """Miroir exact du type `RealFeedback` défini dans dataset.ts côté frontend."""
     __tablename__ = "avis"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     apprenant_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("apprenants.id"), nullable=True)
-    feedback_id: Mapped[str] = mapped_column(String, unique=True, nullable=False)  # ex: 'GF2023-0001'
+    feedback_id: Mapped[str] = mapped_column(String, unique=True, nullable=False)
 
     date_avis: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     annee: Mapped[int | None] = mapped_column(Integer, nullable=True)

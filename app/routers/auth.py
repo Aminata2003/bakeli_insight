@@ -37,11 +37,16 @@ class CreerUtilisateurRequest(BaseModel):
     nom_complet: str
     mot_de_passe: str
     role: str
+    equipe: str | None = None
 
 
 class ChangerMotDePasseRequest(BaseModel):
     ancien_mot_de_passe: str
     nouveau_mot_de_passe: str
+
+
+ROLES_VALIDES = {"super_admin", "admin", "collaborator"}
+EQUIPES_VALIDES = {"marketing", "pedagogie", "direction"}
 
 
 # ============================================================
@@ -90,6 +95,7 @@ def login(
         utilisateur_id=str(utilisateur.id),
         email=utilisateur.email,
         role=utilisateur.role,
+        equipe=utilisateur.equipe,
     )
 
     return {
@@ -100,6 +106,7 @@ def login(
             "email": utilisateur.email,
             "nom_complet": utilisateur.nom_complet,
             "role": utilisateur.role,
+            "equipe": utilisateur.equipe,
         },
     }
 
@@ -129,9 +136,6 @@ def lister_utilisateurs(
     return db.query(Utilisateur).order_by(Utilisateur.nom_complet).all()
 
 
-ROLES_VALIDES = {"super_admin", "admin", "collaborator"}
-
-
 @router.post("/utilisateurs", response_model=UtilisateurOut, status_code=status.HTTP_201_CREATED)
 def creer_utilisateur(
     donnees: CreerUtilisateurRequest,
@@ -145,6 +149,11 @@ def creer_utilisateur(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Rôle invalide -- attendu : {', '.join(sorted(ROLES_VALIDES))}",
         )
+    if donnees.equipe is not None and donnees.equipe not in EQUIPES_VALIDES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Équipe invalide -- attendu : {', '.join(sorted(EQUIPES_VALIDES))} ou aucune",
+        )
 
     existant = db.query(Utilisateur).filter(Utilisateur.email == donnees.email).first()
     if existant:
@@ -157,6 +166,7 @@ def creer_utilisateur(
         email=donnees.email,
         nom_complet=donnees.nom_complet,
         role=donnees.role,
+        equipe=donnees.equipe,
         mot_de_passe_hash=hacher_mot_de_passe(donnees.mot_de_passe),
     )
     db.add(utilisateur)

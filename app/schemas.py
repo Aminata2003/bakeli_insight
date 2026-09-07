@@ -13,13 +13,12 @@ class PlateformeOut(BaseModel):
 
 
 class UtilisateurOut(BaseModel):
-    """Ne jamais inclure mot_de_passe_hash ici -- c'est justement le but de
-    ce schéma séparé plutôt que de renvoyer le modèle Utilisateur brut."""
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
     email: str
     nom_complet: str
     role: str
+    equipe: str | None = None
     actif: bool
 
 
@@ -31,7 +30,6 @@ class ThematiqueOut(BaseModel):
 
 
 class AvisOut(BaseModel):
-    """Miroir exact du type RealFeedback attendu par use-feedback.ts côté frontend."""
     model_config = ConfigDict(from_attributes=True)
 
     feedback_id: str
@@ -65,6 +63,7 @@ class AvisOut(BaseModel):
     texte_a_analyser_ia: str | None = None
     statut_moderation: str
     thematique: str | None = None
+
 
 class AvisListResponse(BaseModel):
     total: int

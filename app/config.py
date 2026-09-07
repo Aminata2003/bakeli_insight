@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     api_keys: str = (
         "admin-secret:admin,"
         "analyst-secret:analyst,"
-        "moderator-secret:moderator"
+        "collaborator-secret:collaborator"
     )
 
     # =========================

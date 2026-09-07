@@ -1,3 +1,5 @@
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -35,6 +37,11 @@ class CreerUtilisateurRequest(BaseModel):
     nom_complet: str
     mot_de_passe: str
     role: str
+
+
+class ChangerMotDePasseRequest(BaseModel):
+    ancien_mot_de_passe: str
+    nouveau_mot_de_passe: str
 
 
 # ============================================================
@@ -156,3 +163,37 @@ def creer_utilisateur(
     db.commit()
     db.refresh(utilisateur)
     return utilisateur
+
+
+# ============================================================
+# CHANGEMENT DE MOT DE PASSE (compte connecté uniquement)
+# ============================================================
+
+@router.patch("/mot-de-passe")
+def changer_mot_de_passe(
+    donnees: ChangerMotDePasseRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Permet à l'utilisateur connecté de changer SON PROPRE mot de passe --
+    aucun rôle particulier requis au-delà d'être authentifié, mais on ne
+    touche jamais au compte d'un autre utilisateur ici."""
+    utilisateur = db.get(Utilisateur, uuid.UUID(current_user["id"]))
+    if not utilisateur:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Compte introuvable")
+
+    if not verifier_mot_de_passe(donnees.ancien_mot_de_passe, utilisateur.mot_de_passe_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Ancien mot de passe incorrect",
+        )
+
+    if len(donnees.nouveau_mot_de_passe) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Le nouveau mot de passe doit contenir au moins 8 caractères",
+        )
+
+    utilisateur.mot_de_passe_hash = hacher_mot_de_passe(donnees.nouveau_mot_de_passe)
+    db.commit()
+    return {"message": "Mot de passe mis à jour"}

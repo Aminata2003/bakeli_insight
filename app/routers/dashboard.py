@@ -14,7 +14,7 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 @router.get("/vue-ensemble")
 def get_vue_ensemble(
     db: Session = Depends(get_db),
-    _current=Depends(require_role("admin", "analyst", "moderator")),
+    _current=Depends(require_role("admin", "analyst", "collaborator")),
 ):
     """Reproduit deriveKpis() de derive.ts (frontend). Un seul score par avis est utilisé
     à la fois pour la catégorie (positif/neutre/négatif) et pour la moyenne, afin que les
@@ -80,7 +80,7 @@ def _avis_charges(db: Session) -> list[Avis]:
 @router.get("/plateformes")
 def repartition_plateformes(
     db: Session = Depends(get_db),
-    _current=Depends(require_role("admin", "analyst", "moderator")),
+    _current=Depends(require_role("admin", "analyst", "collaborator")),
 ):
     avis = _avis_charges(db)
     compteurs = Counter(a.plateforme.nom_affiche for a in avis)
@@ -90,7 +90,7 @@ def repartition_plateformes(
 @router.get("/thematiques")
 def repartition_thematiques(
     db: Session = Depends(get_db),
-    _current=Depends(require_role("admin", "analyst", "moderator")),
+    _current=Depends(require_role("admin", "analyst", "collaborator")),
 ):
     avis = _avis_charges(db)
     compteurs = Counter(a.thematique.nom_affiche if a.thematique else "Non classé" for a in avis)
@@ -100,7 +100,7 @@ def repartition_thematiques(
 @router.get("/sentiments")
 def repartition_sentiments(
     db: Session = Depends(get_db),
-    _current=Depends(require_role("admin", "analyst", "moderator")),
+    _current=Depends(require_role("admin", "analyst", "collaborator")),
 ):
     avis = _avis_charges(db)
     compteurs = Counter(a.sentiment or "neutre" for a in avis)
@@ -122,7 +122,7 @@ def repartition_sentiments(
 def get_wordcloud(
     limite: int = 30,
     db: Session = Depends(get_db),
-    _current=Depends(require_role("admin", "analyst", "moderator")),
+    _current=Depends(require_role("admin", "analyst", "collaborator")),
 ):
     """Nuage de mots dynamique -- Vue Community Manager (section 4.C du cahier
     des charges). Reconnaît les expressions wolof/franglais de la section 3
@@ -136,7 +136,7 @@ def get_wordcloud(
 @router.get("/evolution")
 def evolution_mensuelle(
     db: Session = Depends(get_db),
-    _current=Depends(require_role("admin", "analyst", "moderator")),
+    _current=Depends(require_role("admin", "analyst", "collaborator")),
 ):
     avis = db.scalars(select(Avis)).all()
     groupes: dict[str, dict[str, list[int]]] = {}

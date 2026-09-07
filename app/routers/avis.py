@@ -62,7 +62,7 @@ def lister_avis(
     page: int = 1,
     taille_page: int = 20,
     db: Session = Depends(get_db),
-    _current=Depends(require_role("admin", "analyst", "moderator")),
+    _current=Depends(require_role("admin", "analyst", "collaborator")),
 ):
     """Alimente l'Explorateur des avis. Renvoie le format RealFeedback attendu par use-feedback.ts."""
     if page < 1 or taille_page < 1 or taille_page > 100:
@@ -108,7 +108,7 @@ def changer_statut_moderation(
     avis_id: uuid.UUID,
     nouveau_statut: str,
     db: Session = Depends(get_db),
-    _current=Depends(require_role("admin", "moderator")),
+    _current=Depends(require_role("admin", "collaborator")),
 ):
     """Permet au Community Manager de faire avancer un avis dans le Mur des plaintes :
     nouveau -> en_cours -> traite."""
@@ -130,7 +130,7 @@ def changer_statut_par_feedback(
     feedback_id: str,
     nouveau_statut: str,
     db: Session = Depends(get_db),
-    _current=Depends(require_role("admin", "moderator")),
+    _current=Depends(require_role("admin", "collaborator")),
 ):
     """Version pratique pour le frontend, qui connaît le feedback_id mais pas l'UUID interne."""
     correspondances = {

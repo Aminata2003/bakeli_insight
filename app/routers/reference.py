@@ -13,7 +13,7 @@ router = APIRouter(tags=["reference"])
 @router.get("/plateformes", response_model=list[PlateformeOut])
 def lister_plateformes(
     db: Session = Depends(get_db),
-    _current=Depends(require_role("admin", "analyst", "moderator")),
+    _current=Depends(require_role("admin", "analyst", "collaborator")),
 ):
     return db.scalars(select(Plateforme).order_by(Plateforme.nom_affiche)).all()
 
@@ -21,6 +21,6 @@ def lister_plateformes(
 @router.get("/thematiques", response_model=list[ThematiqueOut])
 def lister_thematiques(
     db: Session = Depends(get_db),
-    _current=Depends(require_role("admin", "analyst", "moderator")),
+    _current=Depends(require_role("admin", "analyst", "collaborator")),
 ):
     return db.scalars(select(Thematique).order_by(Thematique.nom_affiche)).all()

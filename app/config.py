@@ -42,5 +42,13 @@ class Settings(BaseSettings):
         "cardiffnlp/twitter-xlm-roberta-base-sentiment"
     )
 
+    # =========================
+    # Google Sheets (ingestion Google Forms)
+    # =========================
+    google_service_account_file: str | None = None
+    google_sheets_id_disponibilite: str | None = None
+    google_sheets_plage_disponibilite: str = "Form_Responses"
+    typeform_api_token: str | None = None
+    typeform_form_id: str | None = None
 
 settings = Settings()

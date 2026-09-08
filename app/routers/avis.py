@@ -6,6 +6,7 @@ from app.database import get_db
 from app.models import Avis, Plateforme, Thematique
 from app.schemas import AvisOut, AvisListResponse
 from app.security import require_role
+from app.gouvernance import filtrer_avis_par_equipe
 import uuid
 
 router = APIRouter(prefix="/avis", tags=["avis"])
@@ -51,6 +52,7 @@ def _to_avis_out(avis: Avis) -> AvisOut:
         statut_moderation=avis.statut_moderation,
     )
 
+
 @router.get("", response_model=AvisListResponse)
 def lister_avis(
     campus: str | None = None,
@@ -62,9 +64,12 @@ def lister_avis(
     page: int = 1,
     taille_page: int = 20,
     db: Session = Depends(get_db),
-    _current=Depends(require_role("admin", "analyst", "collaborator")),
+    current=Depends(require_role("super_admin", "admin", "collaborator")),
 ):
-    """Alimente l'Explorateur des avis. Renvoie le format RealFeedback attendu par use-feedback.ts."""
+    """Alimente l'Explorateur des avis. Renvoie le format RealFeedback attendu par use-feedback.ts.
+    Restreint selon l'équipe de l'utilisateur (section 5.3 -- gouvernance des accès) :
+    marketing ne voit que les réseaux publics, pédagogie que les canaux internes/privés,
+    direction n'a pas accès à cette liste brute (uniquement aux KPI agrégés du dashboard)."""
     if page < 1 or taille_page < 1 or taille_page > 100:
         raise HTTPException(400, "pagination invalide : page >= 1 et taille_page entre 1 et 100")
 
@@ -73,6 +78,11 @@ def lister_avis(
         joinedload(Avis.thematique),
         joinedload(Avis.apprenant),
     )
+
+    try:
+        stmt = filtrer_avis_par_equipe(stmt, current.get("equipe"))
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
 
     if campus:
         stmt = stmt.where(Avis.campus == campus)
@@ -85,12 +95,7 @@ def lister_avis(
     if sentiment:
         if sentiment not in ("positif", "neutre", "negatif"):
             raise HTTPException(400, "sentiment invalide -- attendu : positif | neutre | negatif")
-        if sentiment == "positif":
-            stmt = stmt.where(Avis.sentiment == "positif")
-        elif sentiment == "negatif":
-            stmt = stmt.where(Avis.sentiment == "negatif")
-        else:
-            stmt = stmt.where(Avis.sentiment == "neutre")
+        stmt = stmt.where(Avis.sentiment == sentiment)
     if statut_moderation:
         stmt = stmt.where(Avis.statut_moderation == statut_moderation)
 
@@ -102,13 +107,12 @@ def lister_avis(
     return AvisListResponse(total=total or 0, items=[_to_avis_out(a) for a in rows])
 
 
-
 @router.patch("/{avis_id}/statut")
 def changer_statut_moderation(
     avis_id: uuid.UUID,
     nouveau_statut: str,
     db: Session = Depends(get_db),
-    _current=Depends(require_role("admin", "collaborator")),
+    _current=Depends(require_role("super_admin", "admin", "collaborator")),
 ):
     """Permet au Community Manager de faire avancer un avis dans le Mur des plaintes :
     nouveau -> en_cours -> traite."""
@@ -130,7 +134,7 @@ def changer_statut_par_feedback(
     feedback_id: str,
     nouveau_statut: str,
     db: Session = Depends(get_db),
-    _current=Depends(require_role("admin", "collaborator")),
+    _current=Depends(require_role("super_admin", "admin", "collaborator")),
 ):
     """Version pratique pour le frontend, qui connaît le feedback_id mais pas l'UUID interne."""
     correspondances = {

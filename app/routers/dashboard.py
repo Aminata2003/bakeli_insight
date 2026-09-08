@@ -7,25 +7,38 @@ from app.database import get_db
 from app.models import Avis
 from app.security import require_role
 from app.wordcloud import calculer_wordcloud
+from app.gouvernance import plateformes_autorisees_ids
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+
+
+def _avis_visibles(db: Session, current: dict, avec_relations: bool = False) -> list[Avis]:
+    """Renvoie les avis visibles par l'utilisateur connecté, restreints par équipe
+    (section 5.3). None = pas de restriction (admin/super_admin/direction --
+    la direction a accès aux KPI agrégés, juste pas à la liste brute des avis)."""
+    stmt = select(Avis)
+    if avec_relations:
+        stmt = stmt.options(joinedload(Avis.plateforme), joinedload(Avis.thematique))
+
+    allowed_ids = plateformes_autorisees_ids(db, current.get("equipe"))
+    avis = db.scalars(stmt).all()
+    if allowed_ids is None:
+        return avis
+    return [a for a in avis if a.plateforme_id in allowed_ids]
 
 
 @router.get("/vue-ensemble")
 def get_vue_ensemble(
     db: Session = Depends(get_db),
-    _current=Depends(require_role("admin", "analyst", "collaborator")),
+    current=Depends(require_role("super_admin", "admin", "collaborator")),
 ):
     """Reproduit deriveKpis() de derive.ts (frontend). Un seul score par avis est utilisé
     à la fois pour la catégorie (positif/neutre/négatif) et pour la moyenne, afin que les
     deux chiffres restent toujours cohérents entre eux."""
-    tous_les_avis = db.scalars(select(Avis)).all()
+    tous_les_avis = _avis_visibles(db, current)
     total = len(tous_les_avis) or 1
 
     def score_effectif(avis: Avis) -> int | None:
-        """Score /10 utilisé pour CE avis, quelle que soit sa source :
-        priorité au score qualitatif explicite (formulaire), sinon on dérive
-        un score /10 à partir de la note NLP /5 (note * 2)."""
         if avis.satisfaction_score_10 is not None:
             return avis.satisfaction_score_10
         if avis.note is not None:
@@ -43,11 +56,7 @@ def get_vue_ensemble(
             return "negatif"
         return "neutre"
 
-    scores_et_categories = [(score_effectif(a), None) for a in tous_les_avis]
-    scores_et_categories = [
-        (score, categorie(a, score))
-        for a, (score, _) in zip(tous_les_avis, scores_et_categories)
-    ]
+    scores_et_categories = [(score_effectif(a), categorie(a, score_effectif(a))) for a in tous_les_avis]
 
     scores_valides = [s for s, _ in scores_et_categories if s is not None]
     categories = [c for _, c in scores_et_categories]
@@ -68,21 +77,12 @@ def get_vue_ensemble(
     }
 
 
-def _avis_charges(db: Session) -> list[Avis]:
-    return db.scalars(
-        select(Avis).options(
-            joinedload(Avis.plateforme),
-            joinedload(Avis.thematique),
-        )
-    ).all()
-
-
 @router.get("/plateformes")
 def repartition_plateformes(
     db: Session = Depends(get_db),
-    _current=Depends(require_role("admin", "analyst", "collaborator")),
+    current=Depends(require_role("super_admin", "admin", "collaborator")),
 ):
-    avis = _avis_charges(db)
+    avis = _avis_visibles(db, current, avec_relations=True)
     compteurs = Counter(a.plateforme.nom_affiche for a in avis)
     return {"items": [{"label": label, "value": value} for label, value in compteurs.most_common()]}
 
@@ -90,9 +90,9 @@ def repartition_plateformes(
 @router.get("/thematiques")
 def repartition_thematiques(
     db: Session = Depends(get_db),
-    _current=Depends(require_role("admin", "analyst", "collaborator")),
+    current=Depends(require_role("super_admin", "admin", "collaborator")),
 ):
-    avis = _avis_charges(db)
+    avis = _avis_visibles(db, current, avec_relations=True)
     compteurs = Counter(a.thematique.nom_affiche if a.thematique else "Non classé" for a in avis)
     return {"items": [{"label": label, "value": value} for label, value in compteurs.most_common()]}
 
@@ -100,19 +100,15 @@ def repartition_thematiques(
 @router.get("/sentiments")
 def repartition_sentiments(
     db: Session = Depends(get_db),
-    _current=Depends(require_role("admin", "analyst", "collaborator")),
+    current=Depends(require_role("super_admin", "admin", "collaborator")),
 ):
-    avis = _avis_charges(db)
+    avis = _avis_visibles(db, current, avec_relations=True)
     compteurs = Counter(a.sentiment or "neutre" for a in avis)
     total = len(avis) or 1
     return {
         "total": len(avis),
         "items": [
-            {
-                "label": label,
-                "value": value,
-                "pourcentage": round(value * 100 / total),
-            }
+            {"label": label, "value": value, "pourcentage": round(value * 100 / total)}
             for label, value in compteurs.most_common()
         ],
     }
@@ -122,23 +118,23 @@ def repartition_sentiments(
 def get_wordcloud(
     limite: int = 30,
     db: Session = Depends(get_db),
-    _current=Depends(require_role("admin", "analyst", "collaborator")),
+    current=Depends(require_role("super_admin", "admin", "collaborator")),
 ):
     """Nuage de mots dynamique -- Vue Community Manager (section 4.C du cahier
     des charges). Reconnaît les expressions wolof/franglais de la section 3
     en plus des mots français génériques."""
     if limite < 1 or limite > 100:
         raise HTTPException(400, "limite invalide -- attendu entre 1 et 100")
-    avis = db.scalars(select(Avis)).all()
+    avis = _avis_visibles(db, current)
     return {"items": calculer_wordcloud(avis, limite)}
 
 
 @router.get("/evolution")
 def evolution_mensuelle(
     db: Session = Depends(get_db),
-    _current=Depends(require_role("admin", "analyst", "collaborator")),
+    current=Depends(require_role("super_admin", "admin", "collaborator")),
 ):
-    avis = db.scalars(select(Avis)).all()
+    avis = _avis_visibles(db, current)
     groupes: dict[str, dict[str, list[int]]] = {}
     for element in avis:
         if element.date_avis is None:

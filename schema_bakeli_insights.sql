@@ -75,7 +75,7 @@ CREATE TABLE identites_temporaires (
     nom             TEXT,
     telephone       TEXT,
     email           TEXT,
-    source_import   TEXT,                      -- d'où vient la donnée (nom du fichier, etc.)
+    source_fichier  TEXT,                      -- d'où vient la donnée (nom du fichier, etc.)
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at      TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '90 days')
 );
@@ -102,16 +102,19 @@ ALTER TABLE identites_temporaires
 -- ----------------------------------------------------------------------------
 CREATE TABLE thematiques (
     id              SERIAL PRIMARY KEY,
-    nom             TEXT NOT NULL UNIQUE,       -- 'Le Rythme / Planning', 'La Plateforme / Outils', ...
-    mots_cles       TEXT[] NOT NULL,            -- ['trop rapide','temps','horaires','fatiguant','charge']
-    kpi_pilote      TEXT                        -- 'Taux de surcharge perçu', ...
+    cle             TEXT NOT NULL UNIQUE,       -- 'plateforme', 'technique', 'coach', ...
+    nom_affiche     TEXT NOT NULL,
+    mots_cles_regex TEXT
 );
 
-INSERT INTO thematiques (nom, mots_cles, kpi_pilote) VALUES
-    ('Le Rythme / Planning',    ARRAY['trop rapide','temps','horaires','fatiguant','charge'], 'Taux de surcharge perçu'),
-    ('La Plateforme / Outils',  ARRAY['connexion','bug','site','vidéo','accès','serveur','zoom'], 'Taux d''incidents techniques'),
-    ('La Pédagogie / Mentors',  ARRAY['coach','explications','clair','dispo','encadrement'], 'Note de performance mentors'),
-    ('Le Contenu / Projets',    ARRAY['exercice','pratique','cours','projet','concret','atelier'], 'Indice de pertinence pratique');
+INSERT INTO thematiques (cle, nom_affiche, mots_cles_regex) VALUES
+    ('plateforme', 'La Plateforme / Outils', 'platefor|plateform|platform|connexion|login|compte|site'),
+    ('technique', 'Technique / Réseau', 'wifi|bug|technique|ordinateur|machine|réseau|reseau|panne|électric|electric'),
+    ('coach', 'Coach / Formateur', 'coach|formateur|encadr|prof'),
+    ('planning', 'Rythme / Planning', 'rythme|horaire|planning|retard|temps|durée|duree|vendredi'),
+    ('projets', 'Projets / Exercices', 'projet|exercice|pratique|tp'),
+    ('administration', 'Administration', 'administra|inscription|paiement|frais|attestation|certificat'),
+    ('pedagogie', 'Pédagogie / Contenu', 'cours|théori|theori|contenu|apprentissage|module|niveau|pédagog|pedagog');
 
 -- ----------------------------------------------------------------------------
 -- 7. AVIS (table centrale — un avis = un message/une réponse, quel que soit le canal)
@@ -120,43 +123,47 @@ INSERT INTO thematiques (nom, mots_cles, kpi_pilote) VALUES
 -- ----------------------------------------------------------------------------
 CREATE TABLE avis (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    apprenant_id        UUID REFERENCES apprenants(id),       -- NULL si auteur externe non identifié (ex: post LinkedIn public)
-    plateforme_id       INT NOT NULL REFERENCES plateformes(id),
-    formulaire_id       INT REFERENCES formulaires(id),        -- NULL si ça ne vient pas d'un formulaire
-
-    -- Contenu
-    texte_brut          TEXT,                                  -- purgé après 90 jours si nominatif (job planifié)
-    texte_brut_expires_at TIMESTAMPTZ,
-    langue_detectee      TEXT,                                 -- 'fr', 'wo' (wolof), 'fr-wo' (mix/code-switching)
-
-    -- Résultats du pipeline NLP (étape "Traitement IA")
-    sentiment           TEXT CHECK (sentiment IN ('positif', 'neutre', 'negatif')),
-    note                SMALLINT CHECK (note BETWEEN 1 AND 5),
-    thematique_id        INT REFERENCES thematiques(id),
-    resume               TEXT,
-
-    -- Modération (Vue Alerte & Community Manager — section 4.C)
-    statut_moderation    TEXT NOT NULL DEFAULT 'nouveau'
-                          CHECK (statut_moderation IN ('nouveau', 'en_cours', 'traite')),
-    traite_par            UUID REFERENCES utilisateurs(id),
-    traite_at             TIMESTAMPTZ,
-
-    -- Métadonnées brutes (flexible, garde tout ce qu'on n'a pas encore modélisé)
-    raw_payload           JSONB,
-
-    -- Traçabilité
-    date_publication       TIMESTAMPTZ NOT NULL,   -- date réelle du post/de la réponse (horodateur du form, date du post...)
-    date_ingestion          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    date_traitement_ia      TIMESTAMPTZ             -- rempli une fois le scoring IA effectué
+    apprenant_id         UUID REFERENCES apprenants(id),
+    feedback_id          TEXT NOT NULL UNIQUE,
+    date_avis            TIMESTAMPTZ,
+    annee                INT,
+    mois                 INT,
+    plateforme_id        INT NOT NULL REFERENCES plateformes(id),
+    campus               TEXT,
+    promotion            TEXT,
+    formation            TEXT,
+    coach                TEXT,
+    satisfaction_qualitative TEXT,
+    satisfaction_score_10 SMALLINT CHECK (satisfaction_score_10 BETWEEN 0 AND 10),
+    frequence_feedback  TEXT,
+    source_feedback     TEXT,
+    attentes_formation  TEXT,
+    attentes_remplies   TEXT,
+    besoin_cours_theorique TEXT,
+    points_amelioration TEXT,
+    avis_activites_vendredi TEXT,
+    regroupement_niveaux TEXT,
+    commentaire_libre   TEXT,
+    langue              TEXT,
+    texte_a_analyser_ia TEXT,
+    sentiment           TEXT,
+    note                SMALLINT CHECK (note IS NULL OR note BETWEEN 1 AND 5),
+    resume              TEXT,
+    langue_detectee     TEXT,
+    date_traitement_ia  TIMESTAMPTZ,
+    thematique_id       INT REFERENCES thematiques(id),
+    statut_moderation   TEXT NOT NULL DEFAULT 'nouveau'
+                         CHECK (statut_moderation IN ('nouveau', 'en_cours', 'traite')),
+    source_fichier      TEXT,
+    date_ingestion      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX idx_avis_plateforme ON avis(plateforme_id);
-CREATE INDEX idx_avis_sentiment ON avis(sentiment);
 CREATE INDEX idx_avis_thematique ON avis(thematique_id);
 CREATE INDEX idx_avis_statut_moderation ON avis(statut_moderation) WHERE statut_moderation != 'traite';
-CREATE INDEX idx_avis_date_publication ON avis(date_publication);
+CREATE INDEX idx_avis_date_avis ON avis(date_avis);
 
-COMMENT ON COLUMN avis.texte_brut IS 'Contenu nominatif brut. À purger après 90 jours -- ne garder que le score agrégé (section 5.2).';
+COMMENT ON COLUMN avis.texte_a_analyser_ia IS 'Texte conservé pour le pipeline d''analyse et la classification thématique.';
 
 -- ----------------------------------------------------------------------------
 -- 8. IMPORTS (historique des imports CSV/Excel — écran "Données" de l'app)
@@ -183,34 +190,39 @@ CREATE TABLE imports (
 -- Index de Satisfaction Global (ISG) — moyenne pondérée sur 10
 CREATE VIEW v_indice_satisfaction_global AS
 SELECT
-    ROUND(AVG(note)::numeric * 2, 1) AS isg_sur_10,  -- conversion note/5 -> /10
+        ROUND(AVG(satisfaction_score_10)::numeric, 1) AS isg_sur_10,
     COUNT(*) AS nb_avis
 FROM avis
-WHERE note IS NOT NULL
-  AND date_publication >= now() - INTERVAL '7 days';
+WHERE satisfaction_score_10 IS NOT NULL
+    AND date_avis >= now() - INTERVAL '7 days';
 
 -- Répartition des sentiments (Thermomètre d'Humeur)
 CREATE VIEW v_repartition_sentiments AS
 SELECT
-    sentiment,
+        CASE
+                WHEN satisfaction_score_10 >= 8 THEN 'positif'
+                WHEN satisfaction_score_10 <= 4 THEN 'negatif'
+                ELSE 'neutre'
+        END AS sentiment,
     COUNT(*) AS nb,
     ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER (), 1) AS pourcentage
 FROM avis
-WHERE sentiment IS NOT NULL
-  AND date_publication >= now() - INTERVAL '7 days'
-GROUP BY sentiment;
+WHERE satisfaction_score_10 IS NOT NULL
+    AND date_avis >= now() - INTERVAL '7 days'
+GROUP BY 1;
 
 -- Mur des plaintes (Vue Alerte & Modération — section 4.C)
 CREATE VIEW v_mur_des_plaintes AS
 SELECT
-    a.id, a.texte_brut, a.resume, a.thematique_id, t.nom AS thematique,
-    a.date_publication, a.date_ingestion, a.statut_moderation, p.nom_affiche AS plateforme
+        a.id, a.commentaire_libre AS texte, a.texte_a_analyser_ia,
+        a.thematique_id, t.nom_affiche AS thematique,
+        a.date_avis, a.date_ingestion, a.statut_moderation, p.nom_affiche AS plateforme
 FROM avis a
 JOIN plateformes p ON p.id = a.plateforme_id
 LEFT JOIN thematiques t ON t.id = a.thematique_id
-WHERE a.sentiment = 'negatif'
+WHERE a.satisfaction_score_10 <= 4
   AND a.statut_moderation != 'traite'
-ORDER BY a.date_publication DESC;
+ORDER BY a.date_avis DESC;
 
 -- ============================================================================
 -- NOTES D'IMPLÉMENTATION
@@ -224,9 +236,8 @@ ORDER BY a.date_publication DESC;
 --
 -- 2. Job planifié à créer (pg_cron ou Supabase Edge Function + cron) :
 --      DELETE FROM identites_temporaires WHERE expires_at < now();
---      UPDATE avis SET texte_brut = NULL WHERE texte_brut_expires_at < now();
+--      -- Les données nominatives sont isolées dans identites_temporaires.
 --
--- 3. `raw_payload` (JSONB) sert de filet de sécurité : toute donnée du fichier
---    source qui n'a pas encore de colonne dédiée est conservée ici plutôt que
---    perdue, en attendant qu'on décide si elle mérite sa propre colonne.
+-- 3. Les champs du formulaire non reconnus par le mapping sont actuellement
+--    ignorés; un champ JSONB pourra être ajouté lors d'une prochaine version.
 -- ============================================================================

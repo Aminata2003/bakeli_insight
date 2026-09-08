@@ -38,6 +38,11 @@ from app.services.ingestion.sources.typeform_client import (
     lire_reponses_typeform,
     ConfigurationTypeformManquante,
 )
+from app.services.ingestion.sources.discord import DiscordConnecteur
+from app.services.ingestion.sources.discord_client import (
+    lire_messages_discord,
+    ConfigurationDiscordManquante,
+)
 
 router = APIRouter(prefix="/imports", tags=["imports"])
 
@@ -483,6 +488,59 @@ async def importer_typeform(
 
     return {
         "source": "typeform",
+        "lignes_recuperees": len(donnees_normalisees),
+        "lignes_importees": lignes_ok,
+        "lignes_en_erreur": lignes_erreur,
+        "erreurs": erreurs,
+    }
+@router.post("/discord")
+async def importer_discord(
+    db: Session = Depends(get_db),
+    _current=Depends(require_role("super_admin", "admin")),
+):
+    if not settings.discord_channel_id_entraide:
+        raise HTTPException(
+            400, "DISCORD_CHANNEL_ID_ENTRAIDE n'est pas configuré."
+        )
+
+    try:
+        messages = await lire_messages_discord(
+            settings.discord_channel_id_entraide
+        )
+    except ConfigurationDiscordManquante as e:
+        raise HTTPException(400, str(e)) from e
+
+    connecteur = DiscordConnecteur(donnees=messages)
+    service_ingestion = ServiceIngestion([connecteur])
+    donnees_normalisees = (
+        await service_ingestion.recuperer_toutes_les_donnees()
+    )
+
+    lignes_ok = 0
+    lignes_erreur = 0
+    erreurs = []
+
+    for donnee in donnees_normalisees:
+        try:
+            with db.begin_nested():
+                await enregistrer_donnee_ingestion(db, donnee)
+            lignes_ok += 1
+        except Exception as e:
+            lignes_erreur += 1
+            erreurs.append(
+                {"source_id": donnee.source_id, "erreur": str(e)}
+            )
+
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            500, f"Impossible de finaliser l'import : {e}"
+        ) from e
+
+    return {
+        "source": "discord",
         "lignes_recuperees": len(donnees_normalisees),
         "lignes_importees": lignes_ok,
         "lignes_en_erreur": lignes_erreur,

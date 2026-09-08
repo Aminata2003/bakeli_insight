@@ -50,5 +50,7 @@ class Settings(BaseSettings):
     google_sheets_plage_disponibilite: str = "Form_Responses"
     typeform_api_token: str | None = None
     typeform_form_id: str | None = None
+    discord_bot_token: str | None = None
+    discord_channel_id_entraide: str | None = None
 
 settings = Settings()

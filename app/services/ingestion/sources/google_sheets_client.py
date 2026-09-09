@@ -1,9 +1,11 @@
 import asyncio
+from urllib.parse import quote
 
 from google.oauth2 import service_account
-from googleapiclient.discovery import build
+from google.auth.transport.requests import AuthorizedSession
 
 from app.config import settings
+
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
@@ -11,7 +13,7 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 class ConfigurationGoogleManquante(Exception):
     """
     Levée quand les credentials Google Cloud ne sont pas
-    encore configurés (fichier de compte de service absent).
+    encore configurés.
     """
 
 
@@ -24,25 +26,50 @@ def _verifier_configuration() -> None:
         )
 
 
-def _construire_service():
+def _construire_session() -> AuthorizedSession:
     _verifier_configuration()
 
     credentials = service_account.Credentials.from_service_account_file(
         settings.google_service_account_file,
         scopes=SCOPES,
     )
-    return build("sheets", "v4", credentials=credentials)
+
+    return AuthorizedSession(credentials)
 
 
-def _lire_google_sheet_sync(spreadsheet_id: str, plage: str) -> list[dict]:
-    service = _construire_service()
+def _lire_google_sheet_sync(
+    spreadsheet_id: str,
+    plage: str
+) -> list[dict]:
 
-    resultat = (
-        service.spreadsheets()
-        .values()
-        .get(spreadsheetId=spreadsheet_id, range=plage)
-        .execute()
+    session = _construire_session()
+
+    # Encodage de la plage pour pouvoir gérer correctement
+    # les noms contenant des espaces ou caractères spéciaux.
+    plage_encodee = quote(plage, safe="")
+
+    url = (
+        f"https://sheets.googleapis.com/v4/spreadsheets/"
+        f"{spreadsheet_id}/values/{plage_encodee}"
     )
+
+    try:
+        response = session.get(
+            url,
+            timeout=30,
+        )
+
+        response.raise_for_status()
+
+        resultat = response.json()
+
+    except Exception as exc:
+        raise RuntimeError(
+            f"Impossible de lire le Google Sheet. "
+            f"Spreadsheet ID: {spreadsheet_id}. "
+            f"Plage: {plage}. "
+            f"Erreur: {exc}"
+        ) from exc
 
     valeurs = resultat.get("values", [])
 
@@ -50,14 +77,27 @@ def _lire_google_sheet_sync(spreadsheet_id: str, plage: str) -> list[dict]:
         return []
 
     en_tetes = valeurs[0]
+
     lignes = valeurs[1:]
 
     donnees = []
+
     for ligne in lignes:
-        # On complète les lignes plus courtes que l'en-tête
-        # (Google Sheets n'envoie pas les cellules vides en fin de ligne)
-        ligne_completee = ligne + [""] * (len(en_tetes) - len(ligne))
-        donnees.append(dict(zip(en_tetes, ligne_completee)))
+
+        # Google Sheets n'envoie pas les cellules vides
+        # situées à la fin d'une ligne.
+        ligne_completee = ligne + [
+            ""
+        ] * max(0, len(en_tetes) - len(ligne))
+
+        donnees.append(
+            dict(
+                zip(
+                    en_tetes,
+                    ligne_completee
+                )
+            )
+        )
 
     return donnees
 
@@ -69,12 +109,12 @@ async def lire_google_sheet(
     """
     Lit les réponses d'un Google Sheet.
 
-    Lève ConfigurationGoogleManquante si les credentials
-    Google Cloud ne sont pas encore configurés.
-
-    L'appel à l'API Google étant bloquant (synchrone), on le
-    déporte dans un thread pour ne pas bloquer l'event loop.
+    L'appel Google est exécuté dans un thread afin
+    de ne pas bloquer l'event loop FastAPI.
     """
+
     return await asyncio.to_thread(
-        _lire_google_sheet_sync, spreadsheet_id, plage
+        _lire_google_sheet_sync,
+        spreadsheet_id,
+        plage,
     )

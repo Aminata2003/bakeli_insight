@@ -128,7 +128,7 @@ app.add_middleware(
         "http://localhost:8081",
     ],
     allow_credentials=False,
-   allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 

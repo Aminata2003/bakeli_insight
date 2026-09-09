@@ -8,6 +8,7 @@ from app.mapping import deduire_thematique
 from app.models import Avis, Plateforme, Thematique
 from app.services.ingestion.base import DonneeIngestion
 from app.services.nlp import analyser_texte
+from app.services.archivage import archiver_donnee_brute
 
 
 async def enregistrer_donnee_ingestion(
@@ -25,6 +26,7 @@ async def enregistrer_donnee_ingestion(
         -> thématique
         -> NLP
         -> PostgreSQL
+        -> archivage brut (MongoDB)
     """
 
     plateforme = db.scalar(
@@ -102,5 +104,15 @@ async def enregistrer_donnee_ingestion(
 
     db.add(avis)
     db.flush()
+
+    # -------------------------------------------------------------
+    # Archivage de la donnée brute dans MongoDB
+    # (best-effort : ne doit jamais faire échouer l'ingestion
+    # PostgreSQL si MongoDB est indisponible)
+    # -------------------------------------------------------------
+    try:
+        await archiver_donnee_brute(donnee)
+    except Exception as e:
+        print(f"[Archivage MongoDB] Échec : {e}")
 
     return avis

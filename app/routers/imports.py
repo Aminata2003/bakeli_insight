@@ -43,6 +43,11 @@ from app.services.ingestion.sources.discord_client import (
     lire_messages_discord,
     ConfigurationDiscordManquante,
 )
+from app.services.ingestion.sources.google_business import GoogleBusinessConnecteur
+from app.services.ingestion.sources.google_business_client import (
+    lire_avis_google_business,
+    ConfigurationGoogleBusinessManquante,
+)
 
 router = APIRouter(prefix="/imports", tags=["imports"])
 
@@ -541,6 +546,52 @@ async def importer_discord(
 
     return {
         "source": "discord",
+        "lignes_recuperees": len(donnees_normalisees),
+        "lignes_importees": lignes_ok,
+        "lignes_en_erreur": lignes_erreur,
+        "erreurs": erreurs,
+    }
+@router.post("/google-business")
+async def importer_google_business(
+    db: Session = Depends(get_db),
+    _current=Depends(require_role("super_admin", "admin")),
+):
+    try:
+        avis_bruts = await lire_avis_google_business()
+    except ConfigurationGoogleBusinessManquante as e:
+        raise HTTPException(400, str(e)) from e
+
+    connecteur = GoogleBusinessConnecteur(donnees=avis_bruts)
+    service_ingestion = ServiceIngestion([connecteur])
+    donnees_normalisees = (
+        await service_ingestion.recuperer_toutes_les_donnees()
+    )
+
+    lignes_ok = 0
+    lignes_erreur = 0
+    erreurs = []
+
+    for donnee in donnees_normalisees:
+        try:
+            with db.begin_nested():
+                await enregistrer_donnee_ingestion(db, donnee)
+            lignes_ok += 1
+        except Exception as e:
+            lignes_erreur += 1
+            erreurs.append(
+                {"source_id": donnee.source_id, "erreur": str(e)}
+            )
+
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            500, f"Impossible de finaliser l'import : {e}"
+        ) from e
+
+    return {
+        "source": "google_business",
         "lignes_recuperees": len(donnees_normalisees),
         "lignes_importees": lignes_ok,
         "lignes_en_erreur": lignes_erreur,

@@ -52,5 +52,8 @@ class Settings(BaseSettings):
     typeform_form_id: str | None = None
     discord_bot_token: str | None = None
     discord_channel_id_entraide: str | None = None
-
+    mongodb_url: str | None = None
+    mongodb_database: str = "bakeli_insights"
+    google_business_account_id: str | None = None
+    google_business_location_id: str | None = None
 settings = Settings()

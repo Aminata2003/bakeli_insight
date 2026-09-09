@@ -11,6 +11,7 @@ from app.database import SessionLocal, get_db
 from app.purge import purger_identites_expirees
 from app.routers import reference, avis, imports, dashboard, auth
 from app.security import require_role
+from app.services.archivage import creer_index_mongo
 
 
 async def purge_quotidienne():
@@ -47,8 +48,16 @@ async def lifespan(app: FastAPI):
     Gestion du cycle de vie de l'application.
 
     La purge RGPD démarre avec l'application et tourne
-    automatiquement toutes les 24 heures.
+    automatiquement toutes les 24 heures. L'index TTL MongoDB
+    est créé une seule fois au démarrage (idempotent : ne fait
+    rien s'il existe déjà).
     """
+    try:
+        await creer_index_mongo()
+        print("[MongoDB] Index TTL (90 jours) vérifié/créé.")
+    except Exception as exc:
+        print(f"[MongoDB] Impossible de créer l'index TTL : {exc}")
+
     purge_task = asyncio.create_task(purge_quotidienne())
 
     try:

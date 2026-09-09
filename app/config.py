@@ -56,4 +56,8 @@ class Settings(BaseSettings):
     mongodb_database: str = "bakeli_insights"
     google_business_account_id: str | None = None
     google_business_location_id: str | None = None
+    meta_page_access_token: str | None = None
+    instagram_media_ids: str | None = None  # liste séparée par des virgules
+    facebook_post_ids: str | None = None    # liste séparée par des virgules
+    telegram_bot_token: str | None = None
 settings = Settings()

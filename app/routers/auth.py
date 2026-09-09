@@ -3,7 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-
+from pydantic import BaseModel, model_validator
 from app.database import get_db
 from app.models import Utilisateur
 from app.auth_password import verifier_mot_de_passe, hacher_mot_de_passe
@@ -43,7 +43,15 @@ class CreerUtilisateurRequest(BaseModel):
 class ChangerMotDePasseRequest(BaseModel):
     ancien_mot_de_passe: str
     nouveau_mot_de_passe: str
+    confirmer_mot_de_passe: str
 
+    @model_validator(mode="after")
+    def verifier_confirmation(self):
+        if self.nouveau_mot_de_passe != self.confirmer_mot_de_passe:
+            raise ValueError(
+                "La confirmation du mot de passe ne correspond pas."
+            )
+        return self
 
 ROLES_VALIDES = {"super_admin", "admin", "collaborator"}
 EQUIPES_VALIDES = {"marketing", "pedagogie", "direction"}

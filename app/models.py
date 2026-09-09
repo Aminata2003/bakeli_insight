@@ -116,3 +116,23 @@ class Avis(Base):
     plateforme: Mapped["Plateforme"] = relationship()
     thematique: Mapped["Thematique | None"] = relationship()
     apprenant: Mapped["Apprenant | None"] = relationship()
+class Import(Base):
+    """Journal des opérations d'import (fichier, Google Sheets, Typeform, ...).
+    Persisté en base pour que l'historique survive à un rechargement/reset
+    du frontend, contrairement à l'ancien stockage localStorage."""
+    __tablename__ = "imports"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    utilisateur_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("utilisateurs.id"), nullable=True
+    )
+    formulaire_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    nom_fichier: Mapped[str] = mapped_column(String, nullable=False)
+    statut: Mapped[str] = mapped_column(String, nullable=False, default="termine")
+    lignes_totales: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    lignes_importees: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    lignes_en_erreur: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    mapping_colonnes: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    erreurs_detail: Mapped[list | dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
+    termine_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 
 from app.database import get_db
-from app.models import Avis, Plateforme, Thematique
+from app.models import Avis, Plateforme, Thematique, Import
 from app.security import require_role
 from app.mapping import (
     deduire_thematique,
@@ -48,6 +48,13 @@ from app.services.ingestion.sources.google_business_client import (
     lire_avis_google_business,
     ConfigurationGoogleBusinessManquante,
 )
+from app.services.ingestion.sources.instagram import InstagramConnecteur
+from app.services.ingestion.sources.facebook import FacebookConnecteur
+from app.services.ingestion.sources.meta_client import (
+    lire_commentaires_instagram,
+    lire_commentaires_facebook,
+    ConfigurationMetaManquante,
+)
 
 router = APIRouter(prefix="/imports", tags=["imports"])
 
@@ -76,6 +83,35 @@ async def apercu_fichier(
         "colonnes": colonnes,
         "mapping_propose": mapper_colonnes_automatiquement(colonnes),
     }
+
+
+@router.get("/")
+async def lister_imports(
+    db: Session = Depends(get_db),
+    _current=Depends(require_role("super_admin", "admin")),
+):
+    """Historique des imports, persisté en base (remplace le localStorage
+    côté frontend). Trié du plus récent au plus ancien."""
+
+    imports = db.scalars(
+        select(Import).order_by(Import.created_at.desc()).limit(100)
+    ).all()
+
+    return [
+        {
+            "id": str(im.id),
+            "nom_fichier": im.nom_fichier,
+            "statut": im.statut,
+            "lignes_totales": im.lignes_totales,
+            "lignes_importees": im.lignes_importees,
+            "lignes_en_erreur": im.lignes_en_erreur,
+            "mapping_colonnes": im.mapping_colonnes,
+            "erreurs_detail": im.erreurs_detail,
+            "created_at": im.created_at.isoformat() if im.created_at else None,
+            "termine_at": im.termine_at.isoformat() if im.termine_at else None,
+        }
+        for im in imports
+    ]
 
 
 @router.post("/upload")
@@ -274,6 +310,39 @@ async def importer_fichier(
             )
 
     # -------------------------------------------------------------
+    # Journal de l'import (persisté en base, remplace le localStorage
+    # côté frontend : c'est ce qui permet de retrouver l'historique
+    # après une réinitialisation ou un rechargement de page).
+    # -------------------------------------------------------------
+        # -------------------------------------------------------------
+    # Détermination du statut final
+    # -------------------------------------------------------------
+    if lignes_erreur == 0:
+        statut_final = "succes"
+    elif lignes_ok == 0:
+        statut_final = "echec"
+    else:
+        statut_final = "partiel"
+
+    # -------------------------------------------------------------
+    # Journal de l'import
+    # -------------------------------------------------------------
+    enregistrement_import = Import(
+        utilisateur_id=_current["id"],
+        formulaire_id=None,
+        nom_fichier=fichier.filename,
+        statut=statut_final,
+        lignes_totales=len(df),
+        lignes_importees=lignes_ok,
+        lignes_en_erreur=lignes_erreur,
+        mapping_colonnes=mapping,
+        erreurs_detail=erreurs or None,
+        termine_at=datetime.now(timezone.utc),
+    )
+
+    db.add(enregistrement_import)
+
+    # -------------------------------------------------------------
     # Validation finale
     # -------------------------------------------------------------
     try:
@@ -288,8 +357,10 @@ async def importer_fichier(
         ) from e
 
     return {
+        "id": str(enregistrement_import.id),
         "nom_fichier": fichier.filename,
         "plateforme": plateforme.code,
+        "statut": statut_final,
         "lignes_totales": len(df),
         "lignes_importees": lignes_ok,
         "lignes_deja_importees": lignes_ignorees,
@@ -597,3 +668,123 @@ async def importer_google_business(
         "lignes_en_erreur": lignes_erreur,
         "erreurs": erreurs,
     }
+@router.post("/instagram")
+async def importer_instagram(
+    db: Session = Depends(get_db),
+    _current=Depends(require_role("super_admin", "admin")),
+):
+    if not settings.instagram_media_ids:
+        raise HTTPException(400, "INSTAGRAM_MEDIA_IDS n'est pas configuré.")
+
+    media_ids = [m.strip() for m in settings.instagram_media_ids.split(",") if m.strip()]
+
+    try:
+        commentaires = await lire_commentaires_instagram(media_ids)
+    except ConfigurationMetaManquante as e:
+        raise HTTPException(400, str(e)) from e
+
+    connecteur = InstagramConnecteur(donnees=commentaires)
+    service_ingestion = ServiceIngestion([connecteur])
+    donnees_normalisees = await service_ingestion.recuperer_toutes_les_donnees()
+
+    lignes_ok = 0
+    lignes_erreur = 0
+    erreurs = []
+
+    for donnee in donnees_normalisees:
+        try:
+            with db.begin_nested():
+                await enregistrer_donnee_ingestion(db, donnee)
+            lignes_ok += 1
+        except Exception as e:
+            lignes_erreur += 1
+            erreurs.append({"source_id": donnee.source_id, "erreur": str(e)})
+
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Impossible de finaliser l'import : {e}") from e
+
+    return {
+        "source": "instagram",
+        "lignes_recuperees": len(donnees_normalisees),
+        "lignes_importees": lignes_ok,
+        "lignes_en_erreur": lignes_erreur,
+        "erreurs": erreurs,
+    }
+
+
+@router.post("/facebook")
+async def importer_facebook(
+    db: Session = Depends(get_db),
+    _current=Depends(require_role("super_admin", "admin")),
+):
+    if not settings.facebook_post_ids:
+        raise HTTPException(400, "FACEBOOK_POST_IDS n'est pas configuré.")
+
+    post_ids = [p.strip() for p in settings.facebook_post_ids.split(",") if p.strip()]
+
+    try:
+        commentaires = await lire_commentaires_facebook(post_ids)
+    except ConfigurationMetaManquante as e:
+        raise HTTPException(400, str(e)) from e
+
+    connecteur = FacebookConnecteur(donnees=commentaires)
+    service_ingestion = ServiceIngestion([connecteur])
+    donnees_normalisees = await service_ingestion.recuperer_toutes_les_donnees()
+
+    lignes_ok = 0
+    lignes_erreur = 0
+    erreurs = []
+
+    for donnee in donnees_normalisees:
+        try:
+            with db.begin_nested():
+                await enregistrer_donnee_ingestion(db, donnee)
+            lignes_ok += 1
+        except Exception as e:
+            lignes_erreur += 1
+            erreurs.append({"source_id": donnee.source_id, "erreur": str(e)})
+
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Impossible de finaliser l'import : {e}") from e
+
+    return {
+        "source": "facebook",
+        "lignes_recuperees": len(donnees_normalisees),
+        "lignes_importees": lignes_ok,
+        "lignes_en_erreur": lignes_erreur,
+        "erreurs": erreurs,
+    }
+@router.delete("/reset")
+async def reinitialiser_donnees(
+    db: Session = Depends(get_db),
+    _current=Depends(require_role("super_admin", "admin")),
+):
+    try:
+        nombre_avis = db.query(Avis).delete(
+            synchronize_session=False
+        )
+
+        nombre_imports = db.query(Import).delete(
+            synchronize_session=False
+        )
+
+        db.commit()
+
+        return {
+            "message": "Les données ont été réinitialisées avec succès.",
+            "avis_supprimes": nombre_avis,
+            "imports_supprimes": nombre_imports,
+        }
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur lors de la réinitialisation des données : {str(e)}",
+        )

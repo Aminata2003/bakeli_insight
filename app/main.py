@@ -12,7 +12,7 @@ from app.purge import purger_identites_expirees
 from app.routers import reference, avis, imports, dashboard, auth
 from app.security import require_role
 from app.services.archivage import creer_index_mongo
-
+from app.routers import assistant
 
 async def purge_quotidienne():
     """
@@ -128,7 +128,7 @@ app.add_middleware(
         "http://localhost:8081",
     ],
     allow_credentials=False,
-    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+   allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -138,7 +138,7 @@ app.include_router(avis.router)
 app.include_router(imports.router)
 app.include_router(dashboard.router)
 app.include_router(auth.router)
-
+app.include_router(assistant.router)
 
 @app.get("/health")
 def health_check():

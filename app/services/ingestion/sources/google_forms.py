@@ -1,3 +1,6 @@
+from datetime import datetime
+
+from app.mapping import normaliser
 from app.services.ingestion.base import ConnecteurIngestion, DonneeIngestion
 
 
@@ -41,6 +44,7 @@ class GoogleFormsConnecteur(ConnecteurIngestion):
                     plateforme_code=self.plateforme_code,
                     source_id=source_id,
                     texte=str(texte),
+                    date_source=_parser_horodateur(source_id),
                     auteur_nom=ligne.get("nom"),
                     auteur_prenom=ligne.get("prenom"),
                     url_source=ligne.get("url"),
@@ -49,13 +53,43 @@ class GoogleFormsConnecteur(ConnecteurIngestion):
             )
 
         return resultat
-COLONNE_HORODATEUR = "Horodateur"
-COLONNE_PRENOM = "Prénom"
-COLONNE_NOM = "Nom"
-COLONNE_REMARQUES = (
-    "Remarques ou suggestions supplémentaires concernant "
-    "l'organisation des séances  ?"
-)
+
+
+def _parser_horodateur(valeur: str) -> datetime | None:
+    """
+    Convertit l'Horodateur d'un Google Form (format
+    "31/07/2026 12:39:58") en datetime exploitable.
+
+    Sans cette date, l'avis retombe sur une date par défaut très
+    ancienne côté frontend, et disparaît silencieusement de tous
+    les filtres de période (Aujourd'hui/Semaine/Mois/Année).
+    """
+    if not valeur:
+        return None
+
+    try:
+        return datetime.strptime(valeur, "%d/%m/%Y %H:%M:%S")
+    except ValueError:
+        return None
+
+
+def _trouver_cle_colonne(ligne: dict, mots_cles: list[str]) -> str | None:
+    """
+    Trouve la clé (en-tête d'origine) d'une ligne dont le nom,
+    une fois normalisé (minuscules, sans accents), commence par
+    l'un des mots-clés donnés.
+
+    Plus robuste qu'une comparaison de chaîne exacte : insensible
+    aux accents, à la casse, et aux petites variations de
+    ponctuation/espaces qu'on ne maîtrise pas sur un Google Sheet
+    externe (apostrophe courbe vs droite, espace en trop, etc.).
+    """
+    for cle in ligne.keys():
+        cle_normalisee = normaliser(cle)
+        for mot in mots_cles:
+            if cle_normalisee.startswith(normaliser(mot)):
+                return cle
+    return None
 
 
 def mapper_reponses_formulaire(lignes_brutes: list[dict]) -> list[dict]:
@@ -63,16 +97,25 @@ def mapper_reponses_formulaire(lignes_brutes: list[dict]) -> list[dict]:
     Convertit les lignes brutes du Google Sheet (en-têtes en
     français, propres à ce formulaire) vers le format générique
     attendu par GoogleFormsConnecteur.
+
+    Les colonnes sont retrouvées par mot-clé plutôt que par
+    correspondance exacte, pour ne pas dépendre d'un en-tête
+    recopié caractère pour caractère.
     """
     lignes_mappees = []
 
     for ligne in lignes_brutes:
+        cle_horodateur = _trouver_cle_colonne(ligne, ["horodateur"])
+        cle_prenom = _trouver_cle_colonne(ligne, ["prenom"])
+        cle_nom = _trouver_cle_colonne(ligne, ["nom"])
+        cle_remarques = _trouver_cle_colonne(ligne, ["remarques"])
+
         lignes_mappees.append(
             {
-                "source_id": ligne.get(COLONNE_HORODATEUR),
-                "nom": ligne.get(COLONNE_NOM),
-                "prenom": ligne.get(COLONNE_PRENOM),
-                "texte": ligne.get(COLONNE_REMARQUES),
+                "source_id": ligne.get(cle_horodateur) if cle_horodateur else None,
+                "nom": ligne.get(cle_nom) if cle_nom else None,
+                "prenom": ligne.get(cle_prenom) if cle_prenom else None,
+                "texte": ligne.get(cle_remarques) if cle_remarques else None,
                 **ligne,  # le reste (créneaux, connexion) part dans metadata
             }
         )

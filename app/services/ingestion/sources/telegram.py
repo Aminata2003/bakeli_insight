@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from app.services.ingestion.base import ConnecteurIngestion, DonneeIngestion
 
 
@@ -36,6 +38,9 @@ class TelegramConnecteur(ConnecteurIngestion):
                     plateforme_code=self.plateforme_code,
                     source_id=str(message.get("message_id", "")),
                     texte=str(texte),
+                    date_source=_parser_timestamp_unix(
+                        message.get("date")
+                    ),
                     auteur_prenom=auteur.get("first_name"),
                     auteur_nom=auteur.get("last_name"),
                     metadata=update,
@@ -43,3 +48,21 @@ class TelegramConnecteur(ConnecteurIngestion):
             )
 
         return resultat
+
+
+def _parser_timestamp_unix(valeur: int | None) -> datetime | None:
+    """
+    Convertit le timestamp Unix (secondes) renvoyé par l'API
+    Telegram dans le champ "date" du message en datetime.
+
+    Sans cette date, l'avis retombe sur une date par défaut très
+    ancienne côté frontend, et disparaît silencieusement de tous
+    les filtres de période (Aujourd'hui/Semaine/Mois/Année).
+    """
+    if not valeur:
+        return None
+
+    try:
+        return datetime.fromtimestamp(valeur, tz=timezone.utc)
+    except (ValueError, OSError, OverflowError):
+        return None

@@ -42,13 +42,18 @@ async def enregistrer_donnee_ingestion(
 
     # Vérification anti-duplication
     feedback_existant = db.scalar(
-        select(Avis).where(
-            Avis.feedback_id == donnee.source_id
-        )
+    select(Avis).where(
+        Avis.feedback_id == donnee.source_id
+       )
     )
 
     if feedback_existant:
-        return feedback_existant
+        try:
+           await archiver_donnee_brute(donnee)
+        except Exception as e:
+            print(f"[Archivage MongoDB] Échec : {e}")
+
+    return feedback_existant
 
     texte = donnee.texte.strip()
 

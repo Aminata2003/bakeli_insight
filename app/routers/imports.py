@@ -55,6 +55,11 @@ from app.services.ingestion.sources.meta_client import (
     lire_commentaires_facebook,
     ConfigurationMetaManquante,
 )
+from app.services.ingestion.sources.telegram import TelegramConnecteur
+from app.services.ingestion.sources.telegram_client import (
+    lire_messages_telegram,
+    ConfigurationTelegramManquante,
+)
 
 router = APIRouter(prefix="/imports", tags=["imports"])
 
@@ -760,6 +765,54 @@ async def importer_facebook(
         "lignes_en_erreur": lignes_erreur,
         "erreurs": erreurs,
     }
+@router.post("/telegram")
+async def importer_telegram(
+    db: Session = Depends(get_db),
+    _current=Depends(require_role("super_admin", "admin")),
+):
+    try:
+        updates = await lire_messages_telegram()
+    except ConfigurationTelegramManquante as e:
+        raise HTTPException(400, str(e)) from e
+
+    connecteur = TelegramConnecteur(donnees=updates)
+    service_ingestion = ServiceIngestion([connecteur])
+    donnees_normalisees = (
+        await service_ingestion.recuperer_toutes_les_donnees()
+    )
+
+    lignes_ok = 0
+    lignes_erreur = 0
+    erreurs = []
+
+    for donnee in donnees_normalisees:
+        try:
+            with db.begin_nested():
+                await enregistrer_donnee_ingestion(db, donnee)
+            lignes_ok += 1
+        except Exception as e:
+            lignes_erreur += 1
+            erreurs.append(
+                {"source_id": donnee.source_id, "erreur": str(e)}
+            )
+
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            500, f"Impossible de finaliser l'import : {e}"
+        ) from e
+
+    return {
+        "source": "telegram",
+        "lignes_recuperees": len(donnees_normalisees),
+        "lignes_importees": lignes_ok,
+        "lignes_en_erreur": lignes_erreur,
+        "erreurs": erreurs,
+    }
+
+
 @router.delete("/reset")
 async def reinitialiser_donnees(
     db: Session = Depends(get_db),
